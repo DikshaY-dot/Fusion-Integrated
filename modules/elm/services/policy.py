@@ -45,16 +45,18 @@ def get_effective_policy(on: date | None = None) -> LeavePolicy:
 
 
 @transaction.atomic
-def publish_policy(policy: LeavePolicy) -> LeavePolicy:
-    """Validate first; the old policy stays in force if validation fails."""
+def publish_policy(policy: LeavePolicy, today: date | None = None) -> LeavePolicy:
+    """Validate first. The old policy is retired only once the new one is in force."""
     validate_params(policy.params)
-    LeavePolicy.objects.filter(status=PublishState.PUBLISHED).exclude(pk=policy.pk).update(
-        status=PublishState.RETIRED
-    )
+    today = today or date.today()
+    in_force_now = policy.effective_from is None or policy.effective_from <= today
+    if in_force_now:
+        LeavePolicy.objects.filter(status=PublishState.PUBLISHED).exclude(pk=policy.pk).update(
+            status=PublishState.RETIRED
+        )
     policy.status = PublishState.PUBLISHED
     policy.save(update_fields=["status", "updated_at"])
     return policy
-
 
 def get_effective_calendar(year: int) -> HolidayCalendar:
     cal = (
