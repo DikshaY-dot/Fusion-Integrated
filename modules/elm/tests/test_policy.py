@@ -35,9 +35,9 @@ class PolicyTests(TestCase):
             version=2, params=policy.DEFAULT_PARAMS, effective_from=date(2999, 1, 1))
         policy.publish_policy(future)
         # publishing retires v1, so with only a future policy nothing is in force
-        with self.assertRaises(policy.NoPublishedPolicy):
-                    self.assertEqual(policy.get_effective_policy(date(2026, 10, 25)).version, 1)
-                    self.assertEqual(policy.get_effective_policy(date(3000, 1, 1)).version, 2)
+                # v1 stays in force until v2's effective date (SRS-EL-091)
+        self.assertEqual(policy.get_effective_policy(date(2026, 10, 25)).version, 1)
+        self.assertEqual(policy.get_effective_policy(date(3000, 1, 1)).version, 2)
 
     def test_calendar_publish_and_lookup(self):
         c1 = HolidayCalendar.objects.create(year=2026, version=1)

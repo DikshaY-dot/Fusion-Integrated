@@ -58,6 +58,7 @@ def publish_policy(policy: LeavePolicy, today: date | None = None) -> LeavePolic
     policy.save(update_fields=["status", "updated_at"])
     return policy
 
+
 def get_effective_calendar(year: int) -> HolidayCalendar:
     cal = (
         HolidayCalendar.objects.filter(year=year, status=PublishState.PUBLISHED)
