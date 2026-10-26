@@ -74,4 +74,9 @@ _LEAVE_ADMIN = [
 
 #: Keyed by the designation name as it exists in globals_designation.
 #: TODO: filled in once the real designation names are confirmed.
-ROLE_GRANTS = {}
+ROLE_GRANTS = {
+    "faculty": _EMPLOYEE,
+    "staff": _EMPLOYEE,
+    "Leave Administrator": [*_EMPLOYEE, *_LEAVE_ADMIN],
+
+}
