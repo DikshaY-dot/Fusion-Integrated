@@ -5,6 +5,7 @@ from django.test import TestCase
 
 from modules.directory.contracts import UserDTO
 from modules.elm.models import (
+    CalendarDay,
     HierarchyRule,
     HolidayCalendar,
     LeaveAccount,
@@ -18,6 +19,10 @@ MON = date(2026, 11, 2)
 FRI = date(2026, 11, 6)
 USERS = {i: UserDTO(user_id=i, username=f"u{i}", display_name=f"U{i}",
                     kind="staff", department="CSE") for i in (1, 2, 3, 7, 10, 20, 40)}
+USERS[50] = UserDTO(user_id=50, username="u50", display_name="Student 50",
+                    kind="student", department="CSE")
+USERS[60] = UserDTO(user_id=60, username="u60", display_name="Faculty 60",
+                    kind="faculty", department="CSE")
 
 
 class AppTests(TestCase):
@@ -30,6 +35,7 @@ class AppTests(TestCase):
         policy.publish_calendar(HolidayCalendar.objects.create(year=2026, version=1))
         for uid in (1, 2, 3, 7):
             accounts.credit_annual(uid, 2026, "staff", policy.DEFAULT_PARAMS)
+        accounts.credit_annual(60, 2026, "faculty", policy.DEFAULT_PARAMS)
         self.rule("unit_head", 10)
         self.rule("final", 40)
 
@@ -122,3 +128,42 @@ class AppTests(TestCase):
         self.assertEqual(r.status, "awaiting_director_self")
         r = app.final_decide(r.pk, 7, "approved")
         self.assertEqual(r.status, "approved")
+
+    def test_student_user_cannot_apply_for_leave(self):
+        with self.assertRaises(app.ApplicationError) as cm:
+            app.create_draft(50, "CL", MON, MON, "studying")
+        self.assertIn("Only employees", str(cm.exception))
+
+    def test_non_employee_substitute_rejected(self):
+        d = app.create_draft(1, "EL", MON, FRI, "rest", substitute_required=True)
+        with self.assertRaises(app.ApplicationError) as cm:
+            app.submit(d.pk, nominee_id=50)
+        self.assertIn("Only employees", str(cm.exception))
+
+    def test_staff_cannot_request_vacation_leave(self):
+        with self.assertRaises(validation.LeaveValidationError) as cm:
+            app.create_draft(1, "VL", MON, FRI, "vacation")
+        self.assertIn("Vacation Leave (VL) is for faculty only", str(cm.exception))
+
+    def test_faculty_can_request_vacation_leave(self):
+        cal = HolidayCalendar.objects.get(year=2026)
+        for offset in range(5):
+            CalendarDay.objects.create(
+                calendar=cal,
+                date=MON + __import__("datetime").timedelta(days=offset),
+                kind="vacation",
+            )
+        d = app.create_draft(60, "VL", MON, FRI, "summer research")
+        self.assertEqual(d.leave_type, "VL")
+        self.assertEqual(d.days, 5)
+
+    def test_cross_year_cl_rejected(self):
+        with self.assertRaises(validation.LeaveValidationError) as cm:
+            app.create_draft(1, "CL", date(2026, 12, 31), date(2027, 1, 2), "new year")
+        self.assertIn("cannot span calendar years", str(cm.exception))
+
+    def test_station_leave_outside_jabalpur_requires_station_address(self):
+        with self.assertRaises(validation.LeaveValidationError) as cm:
+            app.create_draft(1, "CL", MON, MON, "conf", outside_station=True, station_address=" ")
+        self.assertIn("station_address is required", str(cm.exception))
+

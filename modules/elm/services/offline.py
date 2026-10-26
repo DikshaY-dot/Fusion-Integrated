@@ -29,7 +29,7 @@ def record_offline(admin_id: int, applicant_id: int, leave_type: str, start: dat
         applicant_id=applicant_id, leave_type=leave_type, start_date=start, end_date=end,
         half=half, reason=reason or "Offline-sanctioned leave", days=days,
         status=LeaveRequest.Status.APPROVED)
-    accounts.debit_for_request(req)
+    accounts.debit_for_offline(req, reference.strip())
     OfflineRecord.objects.create(
         request=req, recorded_by=admin_id, reference=reference.strip(),
         sanctioned_by=sanctioned_by.strip(), sanctioned_on=sanctioned_on)

@@ -1,8 +1,8 @@
 from datetime import date
 
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 
-from modules.elm.services import scheduled
+from modules.elm.services import policy, scheduled
 
 
 class Command(BaseCommand):
@@ -15,11 +15,18 @@ class Command(BaseCommand):
 
     def handle(self, *args, **opts):
         year = opts["year"]
-        summary = scheduled.process_year_end(year)
+        try:
+            summary = scheduled.process_year_end(year)
+        except policy.NoPublishedPolicy as exc:
+            raise CommandError(f"Year-end processing failed: {exc}") from exc
+
         self.stdout.write(f"Year-end {year}: {summary['lapsed']} lapsed, "
                           f"{summary['converted']} VL converted, {summary['carried']} carried.")
         for exc in summary["exceptions"]:
             self.stderr.write(f"EXCEPTION user {exc['user_id']}: {exc['error']}")
         if not opts["no_credit"]:
-            n = scheduled.credit_year(year + 1)
+            try:
+                n = scheduled.credit_year(year + 1)
+            except policy.NoPublishedPolicy as exc:
+                raise CommandError(f"Year credit failed: {exc}") from exc
             self.stdout.write(f"Credited {n} entitlement(s) for {year + 1}.")

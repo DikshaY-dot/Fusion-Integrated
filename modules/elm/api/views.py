@@ -8,11 +8,13 @@ from datetime import date
 
 from django.db import transaction
 from django.db.models import Max
+from django.http import HttpResponse
 from drf_spectacular.utils import extend_schema
+from rest_framework.renderers import JSONRenderer, StaticHTMLRenderer
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from core.api.exceptions import BadRequestError, ConflictError, NotFoundError, PermissionDeniedError
+from core.api.exceptions import BadRequestError, ConflictError, NotFoundError
 from fusion_auth.permissions import HasPermission
 from modules.elm.api import serializers as sz
 from modules.elm.models import (
@@ -78,10 +80,9 @@ def _out(req) -> dict:
 # -- one POST per action -----------------------------------------------------
 
 def _submit(actor, pk, d):
-    if not LeaveRequest.objects.filter(pk=pk).exists():
+    req = LeaveRequest.objects.filter(pk=pk, applicant_id=actor).first()
+    if req is None:
         raise NotFoundError("Leave request not found.")
-    if not LeaveRequest.objects.filter(pk=pk, applicant_id=actor).exists():
-        raise PermissionDeniedError("Only the applicant can submit this request.")
     return applications.submit(pk, d.get("nominee_id"))
 
 
@@ -127,6 +128,8 @@ _ACTIONS = {
                False),
 }
 
+_APPLICANT_ACTIONS = {"submit", "modify", "withdraw", "cancel", "extend", "nominate", "resume"}
+
 
 def _action_view(name, permission, serializer, handler, partial):
     @extend_schema(request=serializer, responses=sz.RequestOutSerializer)
@@ -134,6 +137,11 @@ def _action_view(name, permission, serializer, handler, partial):
         permission_classes = [HasPermission(permission)]
 
         def post(self, request, pk):
+            uid = request.principal.user_id
+            if name in _APPLICANT_ACTIONS and not LeaveRequest.objects.filter(
+                pk=pk, applicant_id=uid
+            ).exists():
+                raise NotFoundError("Leave request not found.")
             ser = serializer(data=request.data, partial=partial)
             ser.is_valid(raise_exception=True)
             req = call(handler, request.principal.user_id, pk, ser.validated_data)
@@ -196,15 +204,125 @@ class RequestDetailView(APIView):
         return Response(data)
 
 
+def render_printable_html(data: dict) -> str:
+    app_info = data.get("application", {})
+    applicant = data.get("applicant", {})
+    decisions = data.get("decisions", [])
+    substitutes = data.get("substitutes", [])
+    dec_rows = "".join(
+        f"<tr><td>User {d.get('actor_id')}</td><td>{str(d.get('outcome', '')).upper()}</td>"
+        f"<td>{d.get('remarks', '-') or '-'}</td><td>{d.get('created_at', '')}</td></tr>"
+        for d in decisions
+    ) or "<tr><td colspan='4'>No decisions recorded yet.</td></tr>"
+    sub_rows = "".join(
+        f"<tr><td>User {s.get('nominee_id')}</td><td>{str(s.get('status', '')).upper()}</td></tr>"
+        for s in substitutes
+    ) or "<tr><td colspan='2'>No substitute required/assigned.</td></tr>"
+    s_addr = app_info.get('station_address', '-')
+    s_cont = app_info.get('station_contact', '-')
+    station_info = (
+        f"<p><strong>Station Leave Address:</strong> {s_addr}</p>"
+        f"<p><strong>Contact:</strong> {s_cont}</p>"
+        if app_info.get("outside_station") else "<p>Station Leave: Not Applicable</p>"
+    )
+    status_str = str(app_info.get('status', '')).upper()
+    user_name = applicant.get('name', '')
+    user_id = applicant.get('user_id', '')
+    dept = applicant.get('department', '')
+    kind_title = str(applicant.get('kind', '')).title()
+    l_type = app_info.get('leave_type', '')
+    days_val = app_info.get('days', '')
+    s_date = app_info.get('start_date', '')
+    e_date = app_info.get('end_date', '')
+    h_mode = app_info.get('half', '') or 'Full Day'
+    reason_val = app_info.get('reason', '')
+    c_at = app_info.get('created_at', '')
+    app_id = app_info.get('id', '')
+    return f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Leave Application #{app_id}</title>
+<style>
+body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+       margin: 40px; color: #222; }}
+h1 {{ font-size: 1.3rem; text-align: center; margin-bottom: 4px; }}
+h2 {{ font-size: 1.05rem; text-align: center; color: #555; margin-top: 0; }}
+.section {{ margin-top: 20px; border-bottom: 1px solid #ccc; padding-bottom: 10px; }}
+.section h3 {{ font-size: 0.95rem; color: #111; margin-bottom: 6px; }}
+table {{ width: 100%; border-collapse: collapse; margin-top: 6px; }}
+th, td {{ border: 1px solid #ddd; padding: 5px 8px; font-size: 0.85rem; text-align: left; }}
+th {{ background-color: #f7f7f7; }}
+.badge {{ display: inline-block; padding: 2px 6px; font-weight: bold; border-radius: 4px;
+          font-size: 0.8rem; background: #eee; }}
+.signatures {{ display: flex; justify-content: space-between; margin-top: 40px; }}
+.sig-box {{ border-top: 1px solid #333; width: 28%; text-align: center; padding-top: 4px;
+            font-size: 0.8rem; }}
+@media print {{ .no-print {{ display: none; }} body {{ margin: 15mm; }} }}
+</style>
+</head>
+<body>
+<div class="no-print" style="margin-bottom: 12px; text-align: right;">
+  <button onclick="window.print()" style="padding: 4px 10px; cursor: pointer;">Print</button>
+</div>
+<h1>PDPM Indian Institute of Information Technology, Design and Manufacturing Jabalpur</h1>
+<h2>Employee Leave Application Form</h2>
+<div class="section">
+  <h3>Application Summary</h3>
+  <p><strong>Application ID:</strong> #{app_id} &nbsp;|&nbsp;
+     <strong>Status:</strong> <span class="badge">{status_str}</span> &nbsp;|&nbsp;
+     <strong>Created:</strong> {c_at}</p>
+</div>
+<div class="section">
+  <h3>Applicant Details</h3>
+  <table>
+    <tr><th>Employee Name</th><td>{user_name}</td><th>Employee ID</th><td>{user_id}</td></tr>
+    <tr><th>Department</th><td>{dept}</td><th>Category</th><td>{kind_title}</td></tr>
+  </table>
+</div>
+<div class="section">
+  <h3>Leave Particulars</h3>
+  <table>
+    <tr><th>Leave Type</th><td>{l_type}</td><th>Chargeable Days</th><td>{days_val}</td></tr>
+    <tr><th>Period</th><td colspan="3">From {s_date} to {e_date}</td></tr>
+    <tr><th>Half-Day Mode</th><td colspan="3">{h_mode}</td></tr>
+    <tr><th>Reason</th><td colspan="3">{reason_val}</td></tr>
+  </table>
+  {station_info}
+</div>
+<div class="section">
+  <h3>Substitute Endorsement</h3>
+  <table>
+    <tr><th>Nominee</th><th>Consent Status</th></tr>
+    {sub_rows}
+  </table>
+</div>
+<div class="section">
+  <h3>Review and Sanction Trail</h3>
+  <table>
+    <tr><th>Approver / Authority</th><th>Decision</th><th>Remarks</th><th>Timestamp</th></tr>
+    {dec_rows}
+  </table>
+</div>
+<div class="signatures">
+  <div class="sig-box">Applicant Signature</div>
+  <div class="sig-box">Unit Head Recommendation</div>
+  <div class="sig-box">Sanctioning Authority</div>
+</div>
+</body>
+</html>"""
+
+
 class PrintView(APIView):
     """Printable / exportable representation (EL-UC-013). The applicant's own only."""
     permission_classes = [HasPermission(VIEW_OWN)]
+    renderer_classes = [JSONRenderer, StaticHTMLRenderer]
 
     @extend_schema(responses=sz.RequestOutSerializer)
     def get(self, request, pk):
         req = _mine(pk, request.principal.user_id)
         who = call(applications._profile, req.applicant_id)
-        return Response({
+        data = {
             "application": _out(req),
             "applicant": {"user_id": who.user_id, "name": who.display_name,
                           "department": who.department, "kind": who.kind},
@@ -212,7 +330,13 @@ class PrintView(APIView):
                 "actor_id", "outcome", "remarks", "created_at")),
             "substitutes": list(req.substitutes.order_by("id").values(
                 "nominee_id", "status")),
-        })
+        }
+        fmt = request.query_params.get("format", "").lower()
+        accept = request.META.get("HTTP_ACCEPT", "")
+        if fmt == "html" or ("text/html" in accept and "application/json" not in accept):
+            html = render_printable_html(data)
+            return HttpResponse(html, content_type="text/html; charset=utf-8")
+        return Response(data)
 
 
 class TasksView(APIView):

@@ -1,7 +1,9 @@
 from datetime import date, timedelta
 from decimal import Decimal
+from io import StringIO
 from unittest.mock import patch
 
+from django.core.management import CommandError, call_command
 from django.db.models import Sum
 from django.test import TestCase
 from django.utils import timezone
@@ -60,6 +62,9 @@ class OfflineTests(JobsBase):
         self.assertEqual(r.status, "approved")
         self.assertEqual(self.bal(1, 2026, "EL"), 25)
         self.assertTrue(OfflineRecord.objects.filter(request=r).exists())
+        tx = LeaveTransaction.objects.get(request=r)
+        self.assertEqual(tx.kind, LeaveTransaction.Kind.OFFLINE)
+        self.assertIn("Office Order 12/2026", tx.note)
 
     def test_is_not_a_second_approval(self):
         r = self.rec()
@@ -185,3 +190,24 @@ class SlaTests(JobsBase):
         app.withdraw(r.pk, 1)
         self.age(task, 200)
         self.assertEqual(sched.process_sla(self.now), {"reminders": 0, "escalations": 0})
+
+
+class ManagementCommandTests(JobsBase):
+    def test_elm_sla_command_runs(self):
+        out = StringIO()
+        call_command("elm_sla", stdout=out)
+        self.assertIn("SLA: 0 reminder(s), 0 escalation(s)", out.getvalue())
+
+    def test_elm_year_end_command_runs(self):
+        accounts.credit_annual(1, 2026, "staff", policy.DEFAULT_PARAMS)
+        out = StringIO()
+        call_command("elm_year_end", "--year=2026", "--no-credit", stdout=out)
+        self.assertIn("Year-end 2026:", out.getvalue())
+
+    def test_elm_year_end_command_missing_policy_raises_error(self):
+        LeavePolicy.objects.all().delete()
+        policy._POLICY_CACHE = None
+        with self.assertRaises(CommandError) as cm:
+            call_command("elm_year_end", "--year=2026")
+        self.assertIn("Year-end processing failed", str(cm.exception))
+

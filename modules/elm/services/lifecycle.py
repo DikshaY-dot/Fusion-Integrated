@@ -47,8 +47,9 @@ def modify(request_id: int, applicant_id: int, nominee_id: int | None = None, **
         exclude_id=req.pk)
     WorkflowTask.objects.filter(request=req, status=TaskStatus.OPEN).update(
         status=TaskStatus.SUPERSEDED)
-    req.substitutes.filter(status=SubstituteAssignment.Status.PENDING).update(
-        status=SubstituteAssignment.Status.SUPERSEDED)
+    req.substitutes.filter(
+        status__in=[SubstituteAssignment.Status.PENDING, SubstituteAssignment.Status.ACCEPTED]
+    ).update(status=SubstituteAssignment.Status.SUPERSEDED)
     req.status = S.DRAFT
     req.save()
     return applications.submit(req.pk, nominee_id)
@@ -141,6 +142,12 @@ def verify_resumption(request_id: int, verifier_id: int, verified: bool = True):
     unused = min(unused, req.days)
     if unused > 0:
         accounts.restore_unused(req, unused)
+        # SRS-EL-082: Record actual leave period after resumption is verified.
+        if res.actual_date <= req.start_date:
+            req.days = Decimal("0")
+        else:
+            req.end_date = res.actual_date - timedelta(days=1)
+            req.days = req.days - unused
     task.status = TaskStatus.DONE
     task.save(update_fields=["status", "updated_at"])
     res.status = Resumption.Status.VERIFIED
@@ -149,5 +156,5 @@ def verify_resumption(request_id: int, verifier_id: int, verified: bool = True):
     res.unused_days = unused
     res.save()
     req.status = S.CLOSED
-    req.save(update_fields=["status", "updated_at"])
+    req.save(update_fields=["status", "end_date", "days", "updated_at"])
     return req

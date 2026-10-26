@@ -25,6 +25,8 @@ def _profile(user_id: int):
     user = get_users([user_id]).get(user_id)
     if user is None:
         raise ApplicationError("Person not found in the directory.")
+    if user.kind not in ("faculty", "staff"):
+        raise ApplicationError("Only employees (faculty/staff) are eligible to use ELM.")
     return user
 
 
@@ -56,21 +58,35 @@ def validate_and_count(applicant_id: int, leave_type: str, start: date, end: dat
     pol = policy.get_effective_policy()
     if leave_type not in pol.params:
         raise ApplicationError(f"{leave_type} is not enabled in the effective policy.")
-    try:
-        cal = policy.get_effective_calendar(start.year)
-    except policy.NoPublishedCalendar:
-        cal = None
-    if leave_type in ("RH", "VL") and cal is None:
-        raise ApplicationError(f"A published calendar is needed to validate {leave_type}.")
+    prof = _profile(applicant_id)
+    if leave_type == "VL" and prof.kind != "faculty":
+        raise validation.LeaveValidationError("Vacation Leave (VL) is for faculty only.")
+    if start.year != end.year and leave_type in ("CL", "RH", "SCL"):
+        raise validation.LeaveValidationError(
+            f"{leave_type} cannot span calendar years; unused entitlement lapses at year-end."
+        )
+    closed = set()
+    for y in range(start.year, end.year + 1):
+        try:
+            cal_y = policy.get_effective_calendar(y)
+            closed.update(validation.calendar_dates(cal_y, "holiday", start, end))
+        except policy.NoPublishedCalendar as exc:
+            if leave_type in ("RH", "VL"):
+                raise ApplicationError(
+                    f"A published calendar is needed for {y} to validate {leave_type}."
+                ) from exc
+    closed = frozenset(closed)
     if leave_type == "RH":
         if start != end:
             raise ApplicationError("RH is a single day.")
+        cal = policy.get_effective_calendar(start.year)
         validation.check_rh_date(cal, start)
     if leave_type == "VL":
-        validation.check_vl_period(cal, start, end)
-    closed = frozenset()
-    if cal:
-        closed = frozenset(validation.calendar_dates(cal, "holiday", start, end))
+        for y in range(start.year, end.year + 1):
+            cal_y = policy.get_effective_calendar(y)
+            y_start = max(start, date(y, 1, 1))
+            y_end = min(end, date(y, 12, 31))
+            validation.check_vl_period(cal_y, y_start, y_end)
     days = validation.chargeable_days(leave_type, start, end, half, closed)
     validation.check_no_overlap(applicant_id, start, end, half, exclude_id)
     validation.check_balance(applicant_id, start.year, leave_type, days)
@@ -83,6 +99,8 @@ def create_draft(applicant_id: int, leave_type: str, start: date, end: date, rea
                  outside_station: bool = False, station_address: str = "",
                  station_contact: str = "", medical_evidence_ref: str = "") -> LeaveRequest:
     _profile(applicant_id)
+    if outside_station and not station_address.strip():
+        raise validation.LeaveValidationError("station_address is required outside Jabalpur.")
     days = validate_and_count(applicant_id, leave_type, start, end, half)
     return LeaveRequest.objects.create(
         applicant_id=applicant_id, leave_type=leave_type, start_date=start, end_date=end,
@@ -146,7 +164,10 @@ def submit(request_id: int, nominee_id: int | None = None) -> LeaveRequest:
     if new == S.AWAITING_SUBSTITUTE:
         if nominee_id is None:
             raise ApplicationError("A substitute must be nominated.")
-        validation.check_substitute(req.applicant_id, nominee_id, req.start_date, req.end_date)
+        nominee = _profile(nominee_id)
+        validation.check_substitute(
+            req.applicant_id, nominee_id, req.start_date, req.end_date, nominee_user=nominee
+        )
         SubstituteAssignment.objects.create(request=req, nominee_id=nominee_id)
         _open_task(req, TaskStage.SUBSTITUTE, nominee_id)
         req.status = new
@@ -165,7 +186,10 @@ def nominate_substitute(request_id: int, applicant_id: int, nominee_id: int) -> 
     if req.status != S.AWAITING_SUBSTITUTE or req.substitutes.filter(
             status=SubstituteAssignment.Status.PENDING).exists():
         raise ApplicationError("A new nomination is only possible after a decline.")
-    validation.check_substitute(req.applicant_id, nominee_id, req.start_date, req.end_date)
+    nominee = _profile(nominee_id)
+    validation.check_substitute(
+        req.applicant_id, nominee_id, req.start_date, req.end_date, nominee_user=nominee
+    )
     SubstituteAssignment.objects.create(request=req, nominee_id=nominee_id)
     _open_task(req, TaskStage.SUBSTITUTE, nominee_id)
     return req
@@ -181,7 +205,10 @@ def respond_substitute(request_id: int, nominee_id: int, accept: bool) -> LeaveR
     task.save(update_fields=["status", "updated_at"])
     if accept:
         # A nominee who no longer qualifies cannot release the gate.
-        validation.check_substitute(req.applicant_id, nominee_id, req.start_date, req.end_date)
+        nominee = _profile(nominee_id)
+        validation.check_substitute(
+            req.applicant_id, nominee_id, req.start_date, req.end_date, nominee_user=nominee
+        )
         new = workflow.substitute_accepted(req.status, routing.is_director(req.applicant_id))
         sub.status = SubstituteAssignment.Status.ACCEPTED
         sub.save(update_fields=["status", "updated_at"])

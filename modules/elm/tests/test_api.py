@@ -84,11 +84,18 @@ def test_only_the_task_holder_can_decide(stub_iam):
     assert r.status_code == 403
 
 
-def test_nobody_else_can_submit_my_draft(stub_iam):
+def test_nobody_else_can_submit_or_act_on_my_draft(stub_iam):
     rid = make_draft(stub_iam)
+    # Probing another user's request returns 404 (IDOR protection)
     r = as_user(stub_iam, 2, "elm.request.create").post(
         f"{BASE}/requests/{rid}/submit", {}, format="json")
-    assert r.status_code == 403
+    assert r.status_code == 404
+    r_withdraw = as_user(stub_iam, 2, "elm.request.create").post(
+        f"{BASE}/requests/{rid}/withdraw", {}, format="json")
+    assert r_withdraw.status_code == 404
+    r_cancel = as_user(stub_iam, 2, "elm.request.create").post(
+        f"{BASE}/requests/{rid}/cancel", {}, format="json")
+    assert r_cancel.status_code == 404
 
 
 def test_someone_elses_request_is_not_visible(stub_iam):
@@ -128,6 +135,12 @@ def test_applicant_can_print_their_application(stub_iam):
     r = as_user(stub_iam, 1, "elm.request.view_self").get(f"{BASE}/requests/{rid}/print")
     assert r.status_code == 200
     assert r.json()["applicant"]["name"] == "User 1"
+
+    # HTML printable representation (EL-UC-013)
+    r_html = as_user(stub_iam, 1, "elm.request.view_self").get(f"{BASE}/requests/{rid}/print?format=html")
+    assert r_html.status_code == 200
+    assert "text/html" in r_html["Content-Type"]
+    assert "Employee Leave Application Form" in r_html.content.decode("utf-8")
 
 
 def test_policy_admin_needs_the_permission(stub_iam):

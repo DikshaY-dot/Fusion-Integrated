@@ -77,6 +77,7 @@ class ModifyTests(Base):
         self.assertEqual(r.status, "awaiting_unit_head")
         r = life.modify(r.pk, 1, nominee_id=3, reason="new reason")
         self.assertEqual(r.status, "awaiting_substitute")
+        self.assertEqual(r.substitutes.get(nominee_id=2).status, "superseded")
         r = app.respond_substitute(r.pk, 3, accept=True)
         self.assertEqual(r.status, "awaiting_unit_head")
 
@@ -177,6 +178,8 @@ class ResumptionTests(Base):
         parent.refresh_from_db()
         self.assertEqual(parent.status, "closed")
         self.assertEqual(self.bal("EL"), 28)            # 4 Nov, 5 Nov, 6 Nov unused
+        self.assertEqual(parent.end_date, date(2026, 11, 3))  # SRS-EL-082: actual end date recorded
+        self.assertEqual(parent.days, 2)                      # actual days recorded
 
     def test_normal_return_restores_nothing(self):
         parent = self.approved_el()

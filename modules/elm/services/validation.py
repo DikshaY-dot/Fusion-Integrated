@@ -72,10 +72,13 @@ def check_no_overlap(user_id, start, end, half="", exclude_id=None) -> None:
         raise LeaveValidationError("Overlaps with an existing pending or approved leave.")
 
 
-def check_substitute(applicant_id: int, nominee_id: int, start: date, end: date) -> None:
+def check_substitute(applicant_id: int, nominee_id: int, start: date, end: date,
+                     nominee_user=None) -> None:
     """BR-EL-014: another employee, with no overlapping pending/approved leave."""
     if nominee_id == applicant_id:
         raise LeaveValidationError("Applicant cannot be their own substitute.")
+    if nominee_user is not None and getattr(nominee_user, "kind", None) not in ("faculty", "staff"):
+        raise LeaveValidationError("Substitute must be an active employee (faculty or staff).")
     if find_overlapping(nominee_id, start, end, half=""):
         raise LeaveValidationError("Substitute has overlapping leave in this period.")
 

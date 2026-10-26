@@ -66,7 +66,8 @@ def credit_annual(user_id: int, year: int, employee_kind: str, params: dict) -> 
 
 def _net_debited(request: LeaveRequest) -> Decimal:
     rows = LeaveTransaction.objects.filter(request=request)
-    debit = rows.filter(kind=T.DEBIT).aggregate(s=Sum("amount"))["s"] or Decimal("0")
+    kinds = [T.DEBIT, T.OFFLINE]
+    debit = rows.filter(kind__in=kinds).aggregate(s=Sum("amount"))["s"] or Decimal("0")
     restored = rows.filter(kind=T.RESTORE).aggregate(s=Sum("amount"))["s"] or Decimal("0")
     return -debit - restored
 
@@ -83,6 +84,18 @@ def debit_for_request(request: LeaveRequest) -> LeaveAccount:
         raise AccountError("This request has already been debited.")
     return post(request.applicant_id, request.start_date.year, request.leave_type,
                 T.DEBIT, -request.days, request=request, note="Approved leave")
+
+
+@transaction.atomic
+def debit_for_offline(request: LeaveRequest, reference: str) -> LeaveAccount:
+    """SRS-EL-095, SRS-EL-097: Record synchronization for offline-sanctioned leave."""
+    if request.status != LeaveRequest.Status.APPROVED:
+        raise AccountError("Only an approved request can be debited.")
+    if LeaveTransaction.objects.filter(request=request, kind=T.OFFLINE).exists():
+        raise AccountError("This request has already been recorded offline.")
+    return post(request.applicant_id, request.start_date.year, request.leave_type,
+                T.OFFLINE, -request.days, request=request,
+                note=f"Offline sanction ref: {reference}")
 
 
 @transaction.atomic
