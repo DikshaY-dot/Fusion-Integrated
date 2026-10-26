@@ -177,3 +177,28 @@ class LeaveTransaction(TimeStampedModel):
     amount = models.DecimalField(max_digits=7, decimal_places=2)  # signed
     request = models.ForeignKey(LeaveRequest, null=True, blank=True, on_delete=models.SET_NULL)
     note = models.CharField(max_length=255, blank=True)
+
+
+
+class HierarchyRule(TimeStampedModel):
+    """Who acts at each stage of the approval path (BR-EL-019).
+
+    IAM has no 'unit head of X' lookup, so ELM holds the effective hierarchy itself.
+    A blank unit, applicant_kind or leave_type means 'any'. Only published rules apply.
+    """
+    class Stage(models.TextChoices):
+        UNIT_HEAD = "unit_head", "Unit Head"
+        ESTABLISHMENT = "establishment", "Establishment role"
+        FINAL = "final", "Final sanctioning authority"
+        DIRECTOR = "director", "Director (self-sanction rule)"
+
+    status = models.CharField(max_length=12, choices=PublishState.choices,
+                              default=PublishState.DRAFT, db_index=True)
+    stage = models.CharField(max_length=14, choices=Stage.choices)
+    unit = models.CharField(max_length=80, blank=True)            # department / section / office
+    applicant_kind = models.CharField(max_length=16, blank=True)  # faculty | staff | blank
+    leave_type = models.CharField(max_length=3, blank=True, choices=LeaveType.choices)
+    approver_id = models.IntegerField(db_index=True)              # IAM user id
+
+    class Meta:
+        indexes = [models.Index(fields=["status", "stage"], name="elm_hier_status_stage_idx")]
