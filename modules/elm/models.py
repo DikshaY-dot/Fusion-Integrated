@@ -218,3 +218,27 @@ class Resumption(TimeStampedModel):
     verified_at = models.DateTimeField(null=True, blank=True)
     unused_days = models.DecimalField(max_digits=6, decimal_places=2, default=0)
 
+
+
+class OfflineRecord(TimeStampedModel):
+    """Evidence for leave already sanctioned on paper (BR-EL-029). Not a second approval."""
+    request = models.OneToOneField(LeaveRequest, on_delete=models.CASCADE,
+                                   related_name="offline_record")
+    recorded_by = models.IntegerField()
+    reference = models.CharField(max_length=255)       # order / file number
+    sanctioned_by = models.CharField(max_length=120)
+    sanctioned_on = models.DateField()
+
+
+class SlaLog(TimeStampedModel):
+    """One row per reminder or escalation actually issued (SRS-EL-106)."""
+    class Action(models.TextChoices):
+        REMINDER = "reminder", "Reminder"
+        ESCALATION = "escalation", "Escalation"
+
+    task = models.ForeignKey(WorkflowTask, on_delete=models.CASCADE, related_name="sla_logs")
+    action = models.CharField(max_length=12, choices=Action.choices)
+    notified_id = models.IntegerField(null=True, blank=True)
+
+    class Meta:
+        unique_together = [("task", "action")]    # at most one of each per task
