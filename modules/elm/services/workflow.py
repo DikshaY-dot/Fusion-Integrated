@@ -7,7 +7,7 @@ the caller applies the result.
 from modules.elm.models import Decision, LeaveRequest
 
 S = LeaveRequest.Status
-O = Decision.Outcome
+Outcome = Decision.Outcome
 
 #: Categories where the Unit Head is the final authority (BR-EL-016).
 UNIT_HEAD_FINAL = {"CL", "RH"}
@@ -59,13 +59,13 @@ def unit_head_decision(current, leave_type: str, outcome: str,
     """WF-EL-01 steps 8 to 11 (BR-EL-016, BR-EL-017)."""
     _require(current, {S.AWAITING_UNIT_HEAD}, "review")
     if leave_type in UNIT_HEAD_FINAL:
-        if outcome == O.APPROVED:
+        if outcome == Outcome.APPROVED:
             return S.APPROVED
-        if outcome == O.REJECTED:
+        if outcome == Outcome.REJECTED:
             return S.REJECTED
         raise TransitionError("Unit Head must approve or reject CL/RH.")
     # SCL, EL, COL, VL: the Unit Head recommends, never finally rejects.
-    if outcome not in (O.RECOMMENDED, O.NOT_RECOMMENDED):
+    if outcome not in (Outcome.RECOMMENDED, Outcome.NOT_RECOMMENDED):
         raise TransitionError("Unit Head must record Recommended or Not Recommended.")
     return S.AWAITING_ESTABLISHMENT if establishment_configured else S.AWAITING_FINAL
 
@@ -79,9 +79,9 @@ def establishment_routed(current) -> str:
 def final_decision(current, outcome: str) -> str:
     """WF-EL-01 steps 13 to 16; also covers the Director self-sanction case."""
     _require(current, {S.AWAITING_FINAL, S.AWAITING_DIRECTOR_SELF}, "decide")
-    if outcome == O.APPROVED:
+    if outcome == Outcome.APPROVED:
         return S.APPROVED
-    if outcome == O.REJECTED:
+    if outcome == Outcome.REJECTED:
         return S.REJECTED
     raise TransitionError("Final decision must be approve or reject.")
 

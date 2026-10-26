@@ -45,7 +45,7 @@ def as_user(stub_iam, uid, *permissions):
 
 
 def make_draft(stub_iam, uid=1, body=None):
-    r = as_user(stub_iam, uid, "elm.leave.apply").post(
+    r = as_user(stub_iam, uid, "elm.request.create").post(
         f"{BASE}/requests", body or DRAFT, format="json")
     assert r.status_code == 201, r.content
     return r.json()["id"]
@@ -58,25 +58,25 @@ def test_applying_needs_the_permission(stub_iam):
 
 def test_a_cl_request_runs_from_draft_to_approval(stub_iam):
     rid = make_draft(stub_iam)
-    r = as_user(stub_iam, 1, "elm.leave.apply").post(
+    r = as_user(stub_iam, 1, "elm.request.create").post(
         f"{BASE}/requests/{rid}/submit", {}, format="json")
     assert r.json()["status"] == "awaiting_unit_head"
 
-    tasks = as_user(stub_iam, 10, "elm.review.act").get(f"{BASE}/tasks").json()
+    tasks = as_user(stub_iam, 10, "elm.task.view").get(f"{BASE}/tasks").json()
     assert [t["request"]["id"] for t in tasks["results"]] == [rid]
 
-    r = as_user(stub_iam, 10, "elm.review.act").post(
+    r = as_user(stub_iam, 10, "elm.task.view").post(
         f"{BASE}/requests/{rid}/unit-head", {"outcome": "approved"}, format="json")
     assert r.json()["status"] == "approved"
 
-    bal = as_user(stub_iam, 1, "elm.leave.view_own").get(f"{BASE}/balances?year=2026").json()
+    bal = as_user(stub_iam, 1, "elm.account.view_self").get(f"{BASE}/balances?year=2026").json()
     assert {a["leave_type"]: float(a["balance"]) for a in bal["accounts"]}["CL"] == 7
 
 
 def test_only_the_task_holder_can_decide(stub_iam):
     rid = make_draft(stub_iam)
-    as_user(stub_iam, 1, "elm.leave.apply").post(f"{BASE}/requests/{rid}/submit", {}, format="json")
-    r = as_user(stub_iam, 99, "elm.review.act").post(
+    as_user(stub_iam, 1, "elm.request.create").post(f"{BASE}/requests/{rid}/submit", {}, format="json")
+    r = as_user(stub_iam, 99, "elm.task.view").post(
         f"{BASE}/requests/{rid}/unit-head", {"outcome": "approved"}, format="json")
     assert r.status_code == 400
     r = as_user(stub_iam, 10).post(
@@ -86,20 +86,20 @@ def test_only_the_task_holder_can_decide(stub_iam):
 
 def test_nobody_else_can_submit_my_draft(stub_iam):
     rid = make_draft(stub_iam)
-    r = as_user(stub_iam, 2, "elm.leave.apply").post(
+    r = as_user(stub_iam, 2, "elm.request.create").post(
         f"{BASE}/requests/{rid}/submit", {}, format="json")
     assert r.status_code == 403
 
 
 def test_someone_elses_request_is_not_visible(stub_iam):
     rid = make_draft(stub_iam)
-    r = as_user(stub_iam, 2, "elm.leave.view_own").get(f"{BASE}/requests/{rid}")
+    r = as_user(stub_iam, 2, "elm.request.view_self").get(f"{BASE}/requests/{rid}")
     assert r.status_code == 404
 
 
 def test_service_errors_use_the_platform_envelope(stub_iam):
     too_long = dict(DRAFT, end_date="2026-11-13")           # 10 weekdays, balance is 8
-    r = as_user(stub_iam, 1, "elm.leave.apply").post(
+    r = as_user(stub_iam, 1, "elm.request.create").post(
         f"{BASE}/requests", too_long, format="json")
     assert r.status_code == 400
     assert r.json()["error"]["message"]
@@ -107,25 +107,25 @@ def test_service_errors_use_the_platform_envelope(stub_iam):
 
 def test_malformed_input_is_a_validation_error(stub_iam):
     body = {k: v for k, v in DRAFT.items() if k != "reason"}
-    r = as_user(stub_iam, 1, "elm.leave.apply").post(f"{BASE}/requests", body, format="json")
+    r = as_user(stub_iam, 1, "elm.request.create").post(f"{BASE}/requests", body, format="json")
     assert r.status_code == 400
     assert r.json()["error"]["code"] == "validation_error"
 
 
 def test_withdrawn_request_cannot_be_decided(stub_iam):
     rid = make_draft(stub_iam)
-    as_user(stub_iam, 1, "elm.leave.apply").post(f"{BASE}/requests/{rid}/submit", {}, format="json")
-    r = as_user(stub_iam, 1, "elm.leave.apply").post(
+    as_user(stub_iam, 1, "elm.request.create").post(f"{BASE}/requests/{rid}/submit", {}, format="json")
+    r = as_user(stub_iam, 1, "elm.request.create").post(
         f"{BASE}/requests/{rid}/withdraw", {}, format="json")
     assert r.json()["status"] == "withdrawn"
-    r = as_user(stub_iam, 10, "elm.review.act").post(
+    r = as_user(stub_iam, 10, "elm.task.view").post(
         f"{BASE}/requests/{rid}/unit-head", {"outcome": "approved"}, format="json")
     assert r.status_code == 400
 
 
 def test_applicant_can_print_their_application(stub_iam):
     rid = make_draft(stub_iam)
-    r = as_user(stub_iam, 1, "elm.leave.view_own").get(f"{BASE}/requests/{rid}/print")
+    r = as_user(stub_iam, 1, "elm.request.view_self").get(f"{BASE}/requests/{rid}/print")
     assert r.status_code == 200
     assert r.json()["applicant"]["name"] == "User 1"
 
@@ -152,10 +152,10 @@ def test_an_incomplete_policy_is_refused_and_the_old_one_stays(stub_iam):
 
 def test_calendar_publish_and_duplicate_rejected(stub_iam):
     day = {"date": "2026-12-25", "kind": "holiday", "name": "Christmas"}
-    ok = as_user(stub_iam, 20, "elm.policy.manage").post(
+    ok = as_user(stub_iam, 20, "elm.calendar.manage").post(
         f"{BASE}/admin/calendar", {"year": 2026, "days": [day]}, format="json")
     assert ok.status_code == 201 and ok.json()["version"] == 2
-    dup = as_user(stub_iam, 20, "elm.policy.manage").post(
+    dup = as_user(stub_iam, 20, "elm.calendar.manage").post(
         f"{BASE}/admin/calendar", {"year": 2026, "days": [day, day]}, format="json")
     assert dup.status_code == 400
 
@@ -167,5 +167,5 @@ def test_offline_record_updates_the_balance(stub_iam):
     r = as_user(stub_iam, 20, "elm.offline.record").post(
         f"{BASE}/admin/offline", body, format="json")
     assert r.status_code == 201 and r.json()["status"] == "approved"
-    bal = as_user(stub_iam, 1, "elm.leave.view_own").get(f"{BASE}/balances?year=2026").json()
+    bal = as_user(stub_iam, 1, "elm.account.view_self").get(f"{BASE}/balances?year=2026").json()
     assert {a["leave_type"]: float(a["balance"]) for a in bal["accounts"]}["EL"] == 25

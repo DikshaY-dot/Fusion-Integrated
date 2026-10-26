@@ -4,10 +4,16 @@ from unittest.mock import patch
 from django.test import TestCase
 
 from modules.directory.contracts import UserDTO
-from modules.elm.models import (HierarchyRule, HolidayCalendar, LeaveAccount,
-                                LeavePolicy, WorkflowTask)
-from modules.elm.services import accounts, applications as app, lifecycle as life, policy
-from modules.elm.services import validation
+from modules.elm.models import (
+    HierarchyRule,
+    HolidayCalendar,
+    LeaveAccount,
+    LeavePolicy,
+    WorkflowTask,
+)
+from modules.elm.services import accounts, policy, validation
+from modules.elm.services import applications as app
+from modules.elm.services import lifecycle as life
 
 MON = date(2026, 11, 2)
 TUE = date(2026, 11, 3)

@@ -29,7 +29,8 @@ class LeavePolicy(TimeStampedModel):
     status = models.CharField(max_length=12, choices=PublishState.choices,
                               default=PublishState.DRAFT, db_index=True)
     effective_from = models.DateField(null=True, blank=True)
-    params = models.JSONField(default=dict)  # e.g. {"CL": 8, "RH": 2, "SCL": 15, "EL": 30, "COL": 20, "VL": 60}
+    # e.g. {"CL": 8, "RH": 2, "SCL": 15, "EL": 30, "COL": 20, "VL": 60}
+    params = models.JSONField(default=dict)  #
 
 
 class HolidayCalendar(TimeStampedModel):

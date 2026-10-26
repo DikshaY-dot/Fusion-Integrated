@@ -12,21 +12,39 @@ from drf_spectacular.utils import extend_schema
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from core.api.exceptions import (BadRequestError, ConflictError, NotFoundError,
-                                 PermissionDeniedError)
+from core.api.exceptions import BadRequestError, ConflictError, NotFoundError, PermissionDeniedError
 from fusion_auth.permissions import HasPermission
 from modules.elm.api import serializers as sz
-from modules.elm.models import (CalendarDay, HierarchyRule, HolidayCalendar, LeaveAccount,
-                                LeavePolicy, LeaveRequest, LeaveTransaction, WorkflowTask)
-from modules.elm.services import (accounts, applications, lifecycle, offline, policy, routing,
-                                  validation, workflow)
+from modules.elm.models import (
+    CalendarDay,
+    HierarchyRule,
+    HolidayCalendar,
+    LeaveAccount,
+    LeavePolicy,
+    LeaveRequest,
+    LeaveTransaction,
+    WorkflowTask,
+)
+from modules.elm.services import (
+    accounts,
+    applications,
+    lifecycle,
+    offline,
+    policy,
+    routing,
+    validation,
+    workflow,
+)
 
-APPLY = "elm.leave.apply"
-VIEW_OWN = "elm.leave.view_own"
-SUBSTITUTE = "elm.substitute.respond"
-REVIEW = "elm.review.act"
-VERIFY = "elm.resumption.verify"
+APPLY = "elm.request.create"
+VIEW_OWN = "elm.request.view_self"
+VIEW_ACCOUNT = "elm.account.view_self"
+TASKS = "elm.task.view"
+# One inbox permission opens the task endpoints; the open task decides who may act.
+SUBSTITUTE = REVIEW = VERIFY = TASKS
 ADMIN = "elm.policy.manage"
+HIERARCHY = "elm.hierarchy.manage"
+CALENDAR = "elm.calendar.manage"
 OFFLINE = "elm.offline.record"
 
 _BAD = (applications.ApplicationError, validation.LeaveValidationError,
@@ -158,7 +176,7 @@ class RequestsView(APIView):
 
 class RequestDetailView(APIView):
     """Visible to the applicant and to anyone who holds a task on the request."""
-    permission_classes = [HasPermission(VIEW_OWN, SUBSTITUTE, REVIEW, VERIFY)]
+    permission_classes = [HasPermission(VIEW_OWN, TASKS)]
 
     @extend_schema(responses=sz.RequestOutSerializer)
     def get(self, request, pk):
@@ -199,7 +217,7 @@ class PrintView(APIView):
 
 class TasksView(APIView):
     """Open tasks assigned to the caller: substitute responses, reviews, verifications."""
-    permission_classes = [HasPermission(SUBSTITUTE, REVIEW, VERIFY)]
+    permission_classes = [HasPermission(TASKS)]
 
     def get(self, request):
         qs = (WorkflowTask.objects
@@ -215,7 +233,7 @@ class TasksView(APIView):
 
 class BalancesView(APIView):
     """Current balances and leave-account history (EL-UC-012)."""
-    permission_classes = [HasPermission(VIEW_OWN)]
+    permission_classes = [HasPermission(VIEW_ACCOUNT)]
 
     def get(self, request):
         try:
@@ -260,7 +278,7 @@ class PolicyView(APIView):
 
 
 class CalendarView(APIView):
-    permission_classes = [HasPermission(ADMIN)]
+    permission_classes = [HasPermission(CALENDAR)]
 
     @extend_schema(request=sz.CalendarSerializer)
     @transaction.atomic
@@ -280,7 +298,7 @@ class CalendarView(APIView):
 
 
 class HierarchyView(APIView):
-    permission_classes = [HasPermission(ADMIN)]
+    permission_classes = [HasPermission(HIERARCHY)]
 
     def get(self, request):
         rows = HierarchyRule.objects.filter(status="published").order_by("stage", "id")

@@ -9,8 +9,7 @@ from datetime import date
 from django.db import transaction
 
 from modules.directory.contracts import get_users
-from modules.elm.models import (Decision, LeaveRequest, SubstituteAssignment,
-                                WorkflowTask)
+from modules.elm.models import Decision, LeaveRequest, SubstituteAssignment, WorkflowTask
 from modules.elm.services import accounts, policy, routing, validation, workflow
 
 S = LeaveRequest.Status
@@ -69,7 +68,9 @@ def validate_and_count(applicant_id: int, leave_type: str, start: date, end: dat
         validation.check_rh_date(cal, start)
     if leave_type == "VL":
         validation.check_vl_period(cal, start, end)
-    closed = frozenset(validation.calendar_dates(cal, "holiday", start, end)) if cal else frozenset()
+    closed = frozenset()
+    if cal:
+        closed = frozenset(validation.calendar_dates(cal, "holiday", start, end))
     days = validation.chargeable_days(leave_type, start, end, half, closed)
     validation.check_no_overlap(applicant_id, start, end, half, exclude_id)
     validation.check_balance(applicant_id, start.year, leave_type, days)
@@ -114,8 +115,8 @@ def _on_rejected(req: LeaveRequest) -> None:
 
 def _advance(req: LeaveRequest, new_status: str, prof) -> None:
     """Open the task the new state is waiting on, save, and post to the ledger on approval."""
-    who = dict(applicant_id=req.applicant_id, unit=prof.department, kind=prof.kind,
-               leave_type=req.leave_type)
+    who = {"applicant_id": req.applicant_id, "unit": prof.department, "kind": prof.kind,
+               "leave_type": req.leave_type}
     if new_status == S.AWAITING_UNIT_HEAD:
         _open_task(req, TaskStage.UNIT_HEAD, routing.approver_for(routing.Stage.UNIT_HEAD, **who))
     elif new_status == S.AWAITING_ESTABLISHMENT:

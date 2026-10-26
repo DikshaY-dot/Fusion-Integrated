@@ -2,8 +2,7 @@
 from datetime import date, timedelta
 from decimal import Decimal
 
-from modules.elm.models import (CalendarDay, LeaveAccount, LeaveRequest,
-                                LeaveType)
+from modules.elm.models import CalendarDay, LeaveAccount, LeaveRequest, LeaveType
 
 #: Pending or approved leave counts as active for overlap checks (BR-EL-012).
 ACTIVE_STATUSES = [
@@ -53,9 +52,7 @@ def ranges_overlap(a_start, a_end, a_half, b_start, b_end, b_half) -> bool:
     if a_end < b_start or b_end < a_start:
         return False
     same_single_day = a_start == a_end == b_start == b_end
-    if same_single_day and a_half and b_half and a_half != b_half:
-        return False
-    return True
+    return not (same_single_day and a_half and b_half and a_half != b_half)
 
 
 def find_overlapping(user_id: int, start: date, end: date, half: str = "",

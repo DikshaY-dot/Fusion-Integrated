@@ -51,7 +51,7 @@ def process_year_end(year: int) -> dict:
         try:
             with transaction.atomic():
                 _close_user(uid, year, ratio, summary)
-        except Exception as exc:                            # reported, not swallowed
+        except Exception as exc:  # noqa: BLE001 - reported in the summary, never swallowed
             summary["exceptions"].append({"user_id": uid, "error": str(exc)})
     return summary
 
@@ -88,8 +88,8 @@ def _escalation_target(task: WorkflowTask) -> int | None:
         prof = applications._profile(req.applicant_id)
     except applications.ApplicationError:
         return None
-    who = dict(applicant_id=req.applicant_id, unit=prof.department, kind=prof.kind,
-               leave_type=req.leave_type)
+    who = {"applicant_id": req.applicant_id, "unit": prof.department, "kind": prof.kind,
+               "leave_type": req.leave_type}
     for stage in (routing.Stage.FINAL, routing.Stage.DIRECTOR):
         try:
             target = routing.approver_for(stage, **who)
@@ -105,7 +105,9 @@ def process_sla(now=None) -> dict:
     now = now or timezone.now()
     reminder_h, escalation_h = _sla_hours()
     summary = {"reminders": 0, "escalations": 0}
-    for task in WorkflowTask.objects.filter(status=WorkflowTask.Status.OPEN).select_related("request"):
+    open_tasks = WorkflowTask.objects.filter(
+        status=WorkflowTask.Status.OPEN).select_related("request")
+    for task in open_tasks:
         age = now - task.created_at
         if age >= timedelta(hours=reminder_h):
             _, made = SlaLog.objects.get_or_create(

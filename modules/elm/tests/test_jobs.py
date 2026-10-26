@@ -7,12 +7,20 @@ from django.test import TestCase
 from django.utils import timezone
 
 from modules.directory.contracts import UserDTO
-from modules.elm.models import (HierarchyRule, HolidayCalendar, LeaveAccount, LeavePolicy,
-                                LeaveRequest, LeaveTransaction, OfflineRecord, SlaLog,
-                                WorkflowTask)
-from modules.elm.services import accounts, applications as app, offline, policy
+from modules.elm.models import (
+    HierarchyRule,
+    HolidayCalendar,
+    LeaveAccount,
+    LeavePolicy,
+    LeaveRequest,
+    LeaveTransaction,
+    OfflineRecord,
+    SlaLog,
+    WorkflowTask,
+)
+from modules.elm.services import accounts, offline, policy, validation
+from modules.elm.services import applications as app
 from modules.elm.services import scheduled as sched
-from modules.elm.services import validation
 
 MON = date(2026, 11, 2)
 FRI = date(2026, 11, 6)
@@ -41,9 +49,9 @@ class OfflineTests(JobsBase):
         accounts.credit_annual(1, 2026, "staff", policy.DEFAULT_PARAMS)
 
     def rec(self, **kw):
-        args = dict(admin_id=20, applicant_id=1, leave_type="EL", start=MON, end=FRI,
-                    reference="Office Order 12/2026", sanctioned_by="Registrar",
-                    sanctioned_on=date(2026, 10, 1))
+        args = {"admin_id": 20, "applicant_id": 1, "leave_type": "EL", "start": MON, "end": FRI,
+                    "reference": "Office Order 12/2026", "sanctioned_by": "Registrar",
+                    "sanctioned_on": date(2026, 10, 1)}
         args.update(kw)
         return offline.record_offline(**args)
 

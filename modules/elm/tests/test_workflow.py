@@ -4,7 +4,7 @@ from modules.elm.models import Decision, LeaveRequest
 from modules.elm.services import workflow as w
 
 S = LeaveRequest.Status
-O = Decision.Outcome
+Outcome = Decision.Outcome
 
 
 class SubmitTests(SimpleTestCase):
@@ -40,28 +40,28 @@ class SubstituteTests(SimpleTestCase):
 
 class UnitHeadTests(SimpleTestCase):
     def test_cl_approve_is_final(self):
-        self.assertEqual(w.unit_head_decision(S.AWAITING_UNIT_HEAD, "CL", O.APPROVED, True), S.APPROVED)
+        self.assertEqual(w.unit_head_decision(S.AWAITING_UNIT_HEAD, "CL", Outcome.APPROVED, True), S.APPROVED)
 
     def test_rh_reject_is_final(self):
-        self.assertEqual(w.unit_head_decision(S.AWAITING_UNIT_HEAD, "RH", O.REJECTED, False), S.REJECTED)
+        self.assertEqual(w.unit_head_decision(S.AWAITING_UNIT_HEAD, "RH", Outcome.REJECTED, False), S.REJECTED)
 
     def test_cl_cannot_be_recommended(self):
         with self.assertRaises(w.TransitionError):
-            w.unit_head_decision(S.AWAITING_UNIT_HEAD, "CL", O.RECOMMENDED, False)
+            w.unit_head_decision(S.AWAITING_UNIT_HEAD, "CL", Outcome.RECOMMENDED, False)
 
     def test_el_not_recommended_does_not_reject(self):
         self.assertEqual(
-            w.unit_head_decision(S.AWAITING_UNIT_HEAD, "EL", O.NOT_RECOMMENDED, False),
+            w.unit_head_decision(S.AWAITING_UNIT_HEAD, "EL", Outcome.NOT_RECOMMENDED, False),
             S.AWAITING_FINAL)
 
     def test_el_with_establishment_step(self):
         self.assertEqual(
-            w.unit_head_decision(S.AWAITING_UNIT_HEAD, "VL", O.RECOMMENDED, True),
+            w.unit_head_decision(S.AWAITING_UNIT_HEAD, "VL", Outcome.RECOMMENDED, True),
             S.AWAITING_ESTABLISHMENT)
 
     def test_el_cannot_be_rejected_by_unit_head(self):
         with self.assertRaises(w.TransitionError):
-            w.unit_head_decision(S.AWAITING_UNIT_HEAD, "EL", O.REJECTED, False)
+            w.unit_head_decision(S.AWAITING_UNIT_HEAD, "EL", Outcome.REJECTED, False)
 
 
 class FinalAndLifecycleTests(SimpleTestCase):
@@ -69,15 +69,15 @@ class FinalAndLifecycleTests(SimpleTestCase):
         self.assertEqual(w.establishment_routed(S.AWAITING_ESTABLISHMENT), S.AWAITING_FINAL)
 
     def test_final_approve_and_reject(self):
-        self.assertEqual(w.final_decision(S.AWAITING_FINAL, O.APPROVED), S.APPROVED)
-        self.assertEqual(w.final_decision(S.AWAITING_FINAL, O.REJECTED), S.REJECTED)
+        self.assertEqual(w.final_decision(S.AWAITING_FINAL, Outcome.APPROVED), S.APPROVED)
+        self.assertEqual(w.final_decision(S.AWAITING_FINAL, Outcome.REJECTED), S.REJECTED)
 
     def test_director_self_decision(self):
-        self.assertEqual(w.final_decision(S.AWAITING_DIRECTOR_SELF, O.APPROVED), S.APPROVED)
+        self.assertEqual(w.final_decision(S.AWAITING_DIRECTOR_SELF, Outcome.APPROVED), S.APPROVED)
 
     def test_no_decision_after_withdrawal(self):
         with self.assertRaises(w.TransitionError):
-            w.final_decision(S.WITHDRAWN, O.APPROVED)
+            w.final_decision(S.WITHDRAWN, Outcome.APPROVED)
 
     def test_withdraw_pending(self):
         for state in w.PENDING:

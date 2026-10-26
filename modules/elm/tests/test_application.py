@@ -4,9 +4,15 @@ from unittest.mock import patch
 from django.test import TestCase
 
 from modules.directory.contracts import UserDTO
-from modules.elm.models import (HierarchyRule, HolidayCalendar, LeaveAccount,
-                                LeavePolicy, WorkflowTask)
-from modules.elm.services import accounts, applications as app, policy, validation
+from modules.elm.models import (
+    HierarchyRule,
+    HolidayCalendar,
+    LeaveAccount,
+    LeavePolicy,
+    WorkflowTask,
+)
+from modules.elm.services import accounts, policy, validation, workflow
+from modules.elm.services import applications as app
 
 MON = date(2026, 11, 2)
 FRI = date(2026, 11, 6)
@@ -65,7 +71,7 @@ class AppTests(TestCase):
 
     def test_unit_head_cannot_reject_el(self):
         r = app.submit(app.create_draft(1, "EL", MON, FRI, "rest").pk)
-        with self.assertRaises(Exception):
+        with self.assertRaises(workflow.TransitionError):
             app.unit_head_decide(r.pk, 10, "rejected")
 
     def test_substitute_gate_blocks_routing_until_accept(self):
@@ -103,7 +109,7 @@ class AppTests(TestCase):
     def test_cannot_withdraw_after_approval(self):
         r = app.submit(app.create_draft(1, "CL", MON, MON, "x").pk)
         app.unit_head_decide(r.pk, 10, "approved")
-        with self.assertRaises(Exception):
+        with self.assertRaises(workflow.TransitionError):
             app.withdraw(r.pk, 1)
 
     def test_insufficient_balance_rejected_at_draft(self):
