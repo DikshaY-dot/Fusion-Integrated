@@ -202,3 +202,19 @@ class HierarchyRule(TimeStampedModel):
 
     class Meta:
         indexes = [models.Index(fields=["status", "stage"], name="elm_hier_status_stage_idx")]
+
+
+class Resumption(TimeStampedModel):
+    """Return to duty after EL/COL/VL (BR-EL-027, BR-EL-028)."""
+    class Status(models.TextChoices):
+        PENDING = "pending", "Awaiting verification"
+        VERIFIED = "verified", "Verified"
+
+    request = models.ForeignKey(LeaveRequest, on_delete=models.CASCADE, related_name="resumptions")
+    actual_date = models.DateField()          # first day back at work
+    details = models.TextField(blank=True)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
+    verifier_id = models.IntegerField(null=True, blank=True)
+    verified_at = models.DateTimeField(null=True, blank=True)
+    unused_days = models.DecimalField(max_digits=6, decimal_places=2, default=0)
+

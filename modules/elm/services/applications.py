@@ -88,6 +88,28 @@ def create_draft(applicant_id: int, leave_type: str, start: date, end: date, rea
         half=half, reason=reason, days=days, substitute_required=substitute_required,
         outside_station=outside_station, station_address=station_address,
         station_contact=station_contact, medical_evidence_ref=medical_evidence_ref)
+def _on_approved(req: LeaveRequest) -> None:
+    """What final approval does depends on what kind of request it was."""
+    parent = req.parent
+    if req.kind == LeaveRequest.Kind.CANCELLATION:        # SRS-EL-066
+        accounts.reverse_for_request(parent)
+        parent.status = S.CANCELLED
+        parent.save(update_fields=["status", "updated_at"])
+    elif req.kind == LeaveRequest.Kind.EXTENSION:         # SRS-EL-075: only the increment
+        accounts.debit_for_request(req)
+        parent.end_date = req.end_date
+        parent.days = parent.days + req.days
+        parent.save(update_fields=["end_date", "days", "updated_at"])
+    else:
+        accounts.debit_for_request(req)
+
+
+def _on_rejected(req: LeaveRequest) -> None:
+    """A rejected cancellation leaves the original leave approved (SRS-EL-067).
+    A rejected extension changes nothing (SRS-EL-076)."""
+    if req.kind == LeaveRequest.Kind.CANCELLATION:
+        req.parent.status = S.APPROVED
+        req.parent.save(update_fields=["status", "updated_at"])
 
 
 def _advance(req: LeaveRequest, new_status: str, prof) -> None:
@@ -106,7 +128,9 @@ def _advance(req: LeaveRequest, new_status: str, prof) -> None:
     req.status = new_status
     req.save(update_fields=["status", "days", "updated_at"])
     if new_status == S.APPROVED:
-        accounts.debit_for_request(req)
+        _on_approved(req)
+    elif new_status == S.REJECTED:
+        _on_rejected(req)
 
 
 @transaction.atomic
@@ -220,4 +244,7 @@ def withdraw(request_id: int, applicant_id: int) -> LeaveRequest:
         status=SubstituteAssignment.Status.SUPERSEDED)
     req.status = new
     req.save(update_fields=["status", "updated_at"])
+    if req.kind == LeaveRequest.Kind.CANCELLATION:        # withdrawn cancellation: leave stands
+        req.parent.status = S.APPROVED
+        req.parent.save(update_fields=["status", "updated_at"])
     return req
